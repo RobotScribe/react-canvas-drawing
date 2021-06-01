@@ -7,3 +7,9 @@ export const Container = styled.div`
   align-items: center;
   justify-content: center;
 `;
+
+export const GithubLink = styled.a`
+  position: absolute;
+    bottom: 5px;
+    right: 10px;
+`;

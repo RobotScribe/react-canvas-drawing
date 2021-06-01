@@ -1,7 +1,6 @@
 /* eslint-disable max-lines */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-// import lzString from 'lz-string';
 
 import BrushColorPicker from '../BrushColorPicker';
 import { DrawingColor } from '../BrushColorPicker/BrushColorPicker';
@@ -11,6 +10,7 @@ import CanvasActions from '../CanvasActions';
 import {
   drawLine,
   drawPaint,
+  drawStep,
   fillContext,
   Line,
   Step,
@@ -24,24 +24,22 @@ import {
   CanvasContainer,
   CanvasButtons,
   RightButtons,
-  CanvasAndSaveContainer,
+  CanvasAndFooterContainer,
+  StyledDownloadIcon,
+  StyledUploadIcon,
+  CanvasFooter,
+  FooterButton,
 } from './CanvasDraw.style';
 import { getBrushAttributes } from './utils';
 
 interface Props {
   canvasWidth: number;
   canvasHeight: number;
-  // saveStep: (values: { drawing: string }) => void;
-  // initialDrawing: string | null;
 }
-
-const DRAWING_COLOR_VALUES = Object.values(DrawingColor);
 
 const CanvasDraw: React.FC<Props> = ({
   canvasWidth,
   canvasHeight,
-  // saveStep,
-  // initialDrawing,
 }) => {
   const [color, setColor] = useState<DrawingColor>(DrawingColor.BLACK);
   const [brushType, setBrushType] = useState<BrushType>(BrushType.THIN);
@@ -51,18 +49,16 @@ const CanvasDraw: React.FC<Props> = ({
   const mousePosition = useRef<Point | null>(null);
   const currentLine = useRef<Line | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageRef = useRef<ImageData | null>(null);
-
+  const initialDrawing = useRef<File | null>(null);
+  const hiddenFileInput = useRef(null);
   const [
     selectedBrushColor,
     selectedBrushRadius,
     isFillDrawSelected,
     pointCursor,
   ] = getBrushAttributes(color, brushType);
-  const currentColorIndex = DRAWING_COLOR_VALUES.indexOf(selectedBrushColor);
   const cursorPosition =
     brushType === BrushType.FILL ? 17 : Math.round(selectedBrushRadius * Math.sqrt(2));
-  // const decodedDrawing = initialDrawing && lzString.decompressFromBase64(initialDrawing);
 
   const setBrushColor = useCallback(
     (newColor: DrawingColor) => {
@@ -107,7 +103,7 @@ const CanvasDraw: React.FC<Props> = ({
       const coordinates = getCoordinates(event);
       if (coordinates) {
         if (isFillDrawSelected) {
-          fillContext(coordinates, canvasRef, imageRef, selectedBrushColor);
+          fillContext(coordinates, canvasRef, selectedBrushColor);
           addToDrawing({
             point: coordinates,
             color: selectedBrushColor,
@@ -124,7 +120,6 @@ const CanvasDraw: React.FC<Props> = ({
           selectedBrushColor,
           selectedBrushRadius,
           canvasRef,
-          imageRef,
         );
         currentLine.current = {
           points: [coordinates],
@@ -149,7 +144,6 @@ const CanvasDraw: React.FC<Props> = ({
             selectedBrushColor,
             selectedBrushRadius,
             canvasRef,
-            imageRef,
           );
           mousePosition.current = newPosition;
           currentLine.current.points.push(newPosition);
@@ -172,11 +166,11 @@ const CanvasDraw: React.FC<Props> = ({
 
   const handleClear = useCallback(() => {
     const lastDrawingStep = drawing.current[drawing.current.length - 1];
-    if (lastDrawingStep && lastDrawingStep.type === 'clear') {
+    if (lastDrawingStep && lastDrawingStep.type === 'clear') { // Do not clear again for redo
       return;
     }
     // Do not use clearRect because a cleared canvas is black transparent
-    resetCanvas(canvasRef, imageRef);
+    resetCanvas(canvasRef);
     addToDrawing({ type: 'clear' });
   }, []);
 
@@ -184,27 +178,42 @@ const CanvasDraw: React.FC<Props> = ({
     const removedStep = drawing.current.pop();
     if (removedStep) {
       undoneDrawing.current.push(removedStep);
-      drawPaint(drawing.current, canvasRef, imageRef, true) //, decodedDrawing);
+      drawPaint(drawing.current, canvasRef, initialDrawing.current);
     }
-  }, []); // decodedDrawing]);
+  }, []);
 
   const handleRedo = useCallback(() => {
     const stepToRedraw = undoneDrawing.current.pop();
     if (stepToRedraw) {
-      drawPaint([stepToRedraw], canvasRef, imageRef);
+      drawStep(stepToRedraw, canvasRef);
       addToDrawing(stepToRedraw, false);
     }
   }, []);
 
-  // const saveDrawing = useCallback(() => {
-  //   const canvas: HTMLCanvasElement | null = canvasRef.current;
-  //   if (!canvas) return;
+  const saveDrawing = useCallback(() => {
+    const canvas: HTMLCanvasElement | null = canvasRef.current;
+    if (!canvas) return;
 
-  //   const saveData = canvas.toDataURL('image/png');
-  //   const compressed = lzString.compressToBase64(saveData);
+    const saveData = canvas.toDataURL('image/png');
+    var link = document.createElement('a');
+    link.download = 'image.png';
+    link.href = saveData;
+    link.click();
+  }, []);
 
-  //   saveStep({ drawing: compressed });
-  // }, [saveStep]);
+  const handleUploadClick = () => {
+    if (!hiddenFileInput.current) return;
+    // @ts-ignore hiddenFileInput.current cannot be null
+    hiddenFileInput.current.click();
+  };
+
+  const uploadDrawing = (event: any) => {
+    resetCanvas(canvasRef);
+    const fileUploaded = event.target.files[0];
+    initializeCanvas(canvasRef, fileUploaded);
+    drawing.current = [];
+    initialDrawing.current = fileUploaded;
+  };
 
   useEffect(() => {
     if (!canvasRef.current) {
@@ -249,26 +258,13 @@ const CanvasDraw: React.FC<Props> = ({
     };
   }, [exitPaint]);
 
-  // useEffect(() => {
-  //   if (!roundDuration) return;
-
-  //   const timeout = setTimeout(() => {
-  //     saveDrawing();
-  //   }, roundDuration * 1000);
-
-  //   return () => {
-  //     clearTimeout(timeout);
-  //   };
-  // }, [canvasWidth, canvasHeight, saveDrawing, roundDuration]);
-
   useEffect(() => {
-    resetCanvas(canvasRef, imageRef);
-    initializeCanvas(canvasRef, imageRef, null); //, decodedDrawing);
-  }, []); //initialDrawing, decodedDrawing]);
+    resetCanvas(canvasRef);
+  }, []);
 
   return (
     <CanvasContainer>
-      <CanvasAndSaveContainer>
+      <CanvasAndFooterContainer>
         <Canvas
           pointCursor={pointCursor}
           cursorPosition={cursorPosition}
@@ -276,8 +272,24 @@ const CanvasDraw: React.FC<Props> = ({
           height={canvasHeight}
           width={canvasWidth}
         />
-        {/* {displaySaveButton && <StyledCheckIcon onClick={saveDrawing} />} */}
-      </CanvasAndSaveContainer>
+        <CanvasFooter>
+          <FooterButton onClick={handleUploadClick}>
+            <StyledUploadIcon />
+            <input
+              type="file"
+              ref={hiddenFileInput}
+              onChange={uploadDrawing}
+              style={{display: 'none'}}
+              accept="image/*"
+            />
+            Upload Image
+          </FooterButton>
+          <FooterButton onClick={saveDrawing}>
+            <StyledDownloadIcon />
+            Download Image
+          </FooterButton>
+        </CanvasFooter>
+      </CanvasAndFooterContainer>
       <CanvasButtons>
         <BrushColorPicker color={color} setColor={setBrushColor} />
         <RightButtons>

@@ -29,6 +29,7 @@ const BrushColorPicker: React.FC<Props> = ({ color, setColor }) => {
     <BrushPickerContainer>
       {Object.entries(DrawingColor).map(([colorKey, colorOption]) => (
         <ColorBlock
+          key={colorKey}
           onClick={() => setColor(colorOption)}
           color={colorOption}
           selected={colorOption === color}

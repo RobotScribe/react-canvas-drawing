@@ -11,8 +11,6 @@ type canvasRefType = {
   readonly current: HTMLCanvasElement | null;
 };
 
-type ImageDataRefType = React.MutableRefObject<ImageData | null>;
-
 type RGBAColor = {
   r: number;
   g: number;
@@ -27,32 +25,32 @@ const resetCanvasFromImage = (image: ImageData, width: number, height: number) =
   }
 };
 
-const getEmptyImageData = (width: number, height: number) => {
-  const imageData = new ImageData(width, height);
-  resetCanvasFromImage(imageData, width, height);
-  return imageData;
-};
-
-export const resetCanvas = (canvasRef: canvasRefType, imageDataRef: ImageDataRefType) => {
+export const resetCanvas = (canvasRef: canvasRefType) => {
   if (canvasRef.current) {
     const context = canvasRef.current.getContext('2d');
     if (context) {
       context.fillStyle = '#FFFFFF';
       context.fillRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-
-      const canvasWidth = context.canvas.width;
-      const canvasHeight = context.canvas.height;
-      imageDataRef.current = getEmptyImageData(canvasWidth, canvasHeight);
     }
   }
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const getBase64 = (file: File, callback: any) => {
+  let reader = new FileReader();
+  reader.readAsDataURL(file);
+  reader.onload = () => {
+      callback(reader.result)
+  };
+  reader.onerror = (error) => {
+      console.log('Error: ', error);
+  };
+}
+
 export const initializeCanvas = async (
   canvasRef: canvasRefType,
-  imageDataRef: ImageDataRefType,
-  drawing: string | null | undefined,
+  drawing: File,
 ) => {
   if (!canvasRef.current) {
     return;
@@ -62,22 +60,13 @@ export const initializeCanvas = async (
   if (!context) {
     return;
   }
-
-  if (drawing) {
-    const img = new Image();
-    img.onload = function () {
-      context.drawImage(img, 0, 0);
-    };
-    img.src = drawing;
-  }
-
-  const canvasWidth = context.canvas.width;
-  const canvasHeight = context.canvas.height;
-  imageDataRef.current = context.getImageData(0, 0, canvasWidth, canvasHeight);
-
-  // We need await to make this function async because this operation take a few time.
-  // If you do not use that, it will erase future modification of drawing appening just after
-  await sleep(1);
+  const img = new Image();
+  img.onload = () => {
+    context.drawImage(img, 0, 0, img.width, img.height, 0, 0, 384, context.canvas.height);
+  };
+  getBase64(drawing, (result: any) => {
+    img.src = result;
+  });
 };
 
 const drawLineFromImage = (
@@ -159,14 +148,13 @@ export const drawLine = (
   brushColor: string,
   brushRadius: number,
   canvasRef: canvasRefType,
-  imageDataRef: ImageDataRefType,
 ) => {
-  if (!canvasRef.current || !imageDataRef.current) return;
+  if (!canvasRef.current) return;
   const context = canvasRef.current.getContext('2d');
   if (!context) return;
   const canvasWidth = context.canvas.width;
   const canvasHeight = context.canvas.height;
-  const image = imageDataRef.current;
+  const image = context.getImageData(0, 0, canvasWidth, canvasHeight);
   drawLineFromImage(
     image,
     canvasWidth,
@@ -186,7 +174,6 @@ export const drawLine = (
     renderSquare.width,
     renderSquare.height,
   );
-  imageDataRef.current = image;
 };
 
 const drawBresenhamLine = (
@@ -262,19 +249,59 @@ const findLastClearIndex = (paint: Paint) => {
   return paint.length - firstReversedClearIndex - 1;
 };
 
+const drawStepFromImage = (image: ImageData, step: Step, canvasWidth: number, canvasHeight: number) => {
+  switch (step.type) {
+    case 'line':
+      step.points.forEach((point: Point, index: number) => {
+        const nextPoint = step.points[index + 1] || point;
+        drawLineFromImage(
+          image,
+          canvasWidth,
+          canvasHeight,
+          point,
+          nextPoint,
+          step.brushRadius,
+          step.brushColor,
+        );
+      });
+      break;
+    case 'fill':
+      fillContextFromImage(image, step.point, step.color);
+      break;
+    case 'clear':
+      resetCanvasFromImage(image, canvasWidth, canvasHeight);
+      break;
+    default:
+      break;
+  }
+};
+
+export const drawStep = (
+  step: Step,
+  canvasRef: canvasRefType,
+) => {
+  if (!canvasRef.current) return;
+  const context = canvasRef.current.getContext('2d');
+  if (!context) return;
+  const canvasWidth = context.canvas.width;
+  const canvasHeight = context.canvas.height;
+  const image = context.getImageData(0, 0, canvasWidth, canvasHeight);
+  drawStepFromImage(image, step, canvasWidth, canvasHeight)
+  context.putImageData(image, 0, 0);
+}
+
+
 export const drawPaint = async (
   paint: Paint,
   canvasRef: canvasRefType,
-  imageDataRef: ImageDataRefType,
-  shouldResetCanvas = false,
-  initialDrawing: string | null = null,
+  initialDrawing: File | null,
 ) => {
-  // Do not use foreach because initializeCanvas need to use async
-  const lastClearIndex = findLastClearIndex(paint);
-  let startIndex = lastClearIndex === -1 ? 0 : lastClearIndex;
-
-  if (shouldResetCanvas && initialDrawing && startIndex === 0) {
-    await initializeCanvas(canvasRef, imageDataRef, initialDrawing);
+  // Before gettting image initialize canvas
+  let lastClearIndex = findLastClearIndex(paint);
+  const shouldInitCanvas = lastClearIndex === -1 && initialDrawing
+  if (shouldInitCanvas) {
+    await initializeCanvas(canvasRef, initialDrawing as File);
+    await sleep(10); // Sleep a while because initializeCanvas is async. Otherwise is do not redraw steps some times
   }
 
   if (!canvasRef.current) return;
@@ -282,47 +309,18 @@ export const drawPaint = async (
   if (!context) return;
   const canvasWidth = context.canvas.width;
   const canvasHeight = context.canvas.height;
-  const image = imageDataRef.current;
-  if (!image) return;
+  const image = context.getImageData(0, 0, canvasWidth, canvasHeight);
 
-  if (shouldResetCanvas && !initialDrawing && startIndex === 0) {
+  if (!shouldInitCanvas) {
     resetCanvasFromImage(image, canvasWidth, canvasHeight);
   }
 
-  if (startIndex !== 0) {
-    resetCanvasFromImage(image, canvasWidth, canvasHeight);
-    startIndex++;
-  }
-
-  for (let i = startIndex; i < paint.length; i++) {
-    const paintStep = paint[i];
-    switch (paintStep.type) {
-      case 'line':
-        paintStep.points.forEach((point: Point, index: number) => {
-          const nextPoint = paintStep.points[index + 1] || point;
-          drawLineFromImage(
-            image,
-            canvasWidth,
-            canvasHeight,
-            point,
-            nextPoint,
-            paintStep.brushRadius,
-            paintStep.brushColor,
-          );
-        });
-        break;
-      case 'fill':
-        fillContextFromImage(image, paintStep.point, paintStep.color);
-        break;
-      case 'clear':
-        resetCanvasFromImage(image, canvasWidth, canvasHeight);
-        break;
-      default:
-        break;
-    }
+  // Do not use foreach because initializeCanvas need to use async
+  for (let i = lastClearIndex + 1; i < paint.length; i++) {
+    const step = paint[i];
+    drawStepFromImage(image, step, canvasWidth, canvasHeight)
   }
   context.putImageData(image, 0, 0);
-  imageDataRef.current = image;
 };
 
 const floodfill = (
@@ -425,17 +423,14 @@ const fillContextFromImage = (image: ImageData, coordinates: Point, color: strin
 export const fillContext = (
   coordinates: Point,
   canvasRef: canvasRefType,
-  imageDataRef: ImageDataRefType,
   color: string,
 ) => {
   if (!canvasRef.current) return;
   const context = canvasRef.current.getContext('2d');
   if (!context) return;
 
-  const image = imageDataRef.current;
-  if (!image) return;
+  const image = context.getImageData(0, 0, context.canvas.width, context.canvas.height);
 
   fillContextFromImage(image, coordinates, color);
   context.putImageData(image, 0, 0);
-  imageDataRef.current = image;
 };

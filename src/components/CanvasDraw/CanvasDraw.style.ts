@@ -1,5 +1,6 @@
 import styled from 'styled-components';
-import { ReactComponent as CheckIcon } from '../../assets/check.svg';
+import { ReactComponent as DownloadIcon } from '../../assets/download.svg';
+import { ReactComponent as UploadIcon } from '../../assets/upload.svg';
 
 export const PadStepDone = styled.div`
   position: absolute;
@@ -49,17 +50,32 @@ export const RightButtons = styled.div`
   justify-content: space-between;
 `;
 
-export const StyledCheckIcon = styled(CheckIcon)`
-  cursor: pointer;
-  margin: auto;
+export const CanvasFooter = styled.div`
   margin-top: 15px;
-
-  .main {
-    fill: #9B37A9;
-  }
+  display: flex;
+  justify-content: space-between;
 `;
 
-export const CanvasAndSaveContainer = styled.div`
+export const StyledDownloadIcon = styled(DownloadIcon)`
+  width: 30px;
+  margin-right: 10px;
+`;
+
+export const StyledUploadIcon = styled(UploadIcon)`
+  width: 30px;
+  margin-right: 10px;
+`;
+
+export const CanvasAndFooterContainer = styled.div`
   display: flex;
   flex-direction: column;
+`;
+
+export const FooterButton = styled.button`
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  outline: none;
+  border: none;
+  background-color: unset;
 `;
