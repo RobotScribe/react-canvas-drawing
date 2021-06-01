@@ -44,7 +44,7 @@ const getBase64 = (file: File, callback: any) => {
       callback(reader.result)
   };
   reader.onerror = (error) => {
-      console.log('Error: ', error);
+      console.error(error);
   };
 }
 
@@ -60,9 +60,22 @@ export const initializeCanvas = async (
   if (!context) {
     return;
   }
+  const canvasWidth = context.canvas.width;
+  const canvasHeight = context.canvas.height;
+
+
   const img = new Image();
   img.onload = () => {
-    context.drawImage(img, 0, 0, img.width, img.height, 0, 0, 384, context.canvas.height);
+    const imageWidth = img.width;
+    const imageHeight = img.height;
+
+    const resizedImageWidth = Math.min(canvasWidth, imageWidth * canvasHeight / imageHeight);
+    const resizedImageHeight = Math.min(canvasHeight, imageHeight * canvasWidth / imageWidth);
+
+    const leftOffset = (canvasWidth - resizedImageWidth) / 2;
+    const topOffset = (canvasHeight - resizedImageHeight) / 2;
+
+    context.drawImage(img, 0, 0, img.width, img.height, leftOffset, topOffset, resizedImageWidth, resizedImageHeight);
   };
   getBase64(drawing, (result: any) => {
     img.src = result;
